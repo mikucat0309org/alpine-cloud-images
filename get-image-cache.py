@@ -126,6 +126,7 @@ for region in sorted(regions):
 
         # parse image name for more information
         # NOTE: we can't rely on tags, because they may not have been set successfully
+        # TODO: but we should use them if we got them!
         m = RE_STUFF.search(name)
         if not m:
             log.error(f'!PARSE\t{region}\t{id}\t{name}')
@@ -145,6 +146,7 @@ for region in sorted(regions):
         eol = None  # we don't know for sure, unless we have a deprecation time
         if image.deprecation_time:
             eol = time.strptime(image.deprecation_time, '%Y-%m-%dT%H:%M:%S.%fZ') < now
+            # TODO: when did we start setting deprecation time?
 
         # keep track of images
         data[region]['images'][id] = {

@@ -5,6 +5,7 @@ import logging
 import hashlib
 import os
 import subprocess
+import sys
 import time
 
 from datetime import datetime
@@ -94,24 +95,14 @@ class AWSCloudAdapter(CloudAdapterInterface):
         return sorted(
             ec2r.images.filter(**req), key=lambda k: k.creation_date, reverse=True)
 
-    # necessary cloud-agnostic image info
-    # TODO: still necessary?  maybe just incoroporate into new latest_imported_tags()?
-    def _image_info(self, i):
-        tags = ImageTags(from_list=i.tags)
-        return DictObj({k: tags.get(k, None) for k in self.IMAGE_INFO})
-
-    # TODO: deprectate/remove
-    # get the latest imported image's tags for a given build key
-    def get_latest_imported_tags(self, project, image_key):
+    def _get_this_image(self, ic, region=None):
         images = self._get_images_with_tags(
-            project=project,
-            image_key=image_key,
+            ic.project,
+            ic.image_key,
+            tags={'revision': ic.revision},
+            region=region
         )
-        if images:
-            # first one is the latest
-            return ImageTags(from_list=images[0].tags)
-
-        return None
+        return None if not images else images[0]
 
     # import an image
     # NOTE: requires 'vmimport' role with read/write of <s3_bucket>.* and its objects
@@ -256,27 +247,24 @@ class AWSCloudAdapter(CloudAdapterInterface):
     # publish an image
     def publish_image(self, ic):
         log = logging.getLogger('publish')
-        source_image = self.get_latest_imported_tags(
-            ic.project,
-            ic.image_key,
-        )
-        # TODO: might be the wrong source image?
-        if not source_image or source_image.name != ic.tags.name:
-            log.warning('No source image for %s, reimporting', ic.tags.name)
-            # TODO: try importing it again?
-            self.import_image(ic, log)
-            source_image = self.get_latest_imported_tags(
-                ic.project,
-                ic.image_key,
-            )
-            if not source_image or source_image.name != ic.tags.name:
-                log.error('No source image for %s', ic.tags.name)
-                raise RuntimeError('Missing source image')
 
-        source_id = source_image.import_id
+        source = self._get_this_image(ic)
+        source_image = None if not source else ImageTags(from_list=source.tags)
+        if not source or source_image.name != ic.tags.name:
+            if not source:
+                log.warning('No source AMI for %s, reimporting...', ic.tags.name)
+            elif source_image.name != ic.tags.name:
+                log.warning('Unexpected source AMI name for %s (%s), reimporting...', ic.tags.name, source_image.name)
+
+            self.import_image(ic, log)
+            source = self._get_this_image(ic)
+            source_image = None if not source else ImageTags(from_list=source.tags)
+            if not source or source_image.name != ic.tags.name:
+                raise RuntimeError('Unable to reimport source AMI')
+
+        ic.tags.source_id = source.id   # it might have been updated with a re/import!
         source_region = source_image.import_region
-        log.info('Publishing source: %s/%s', source_region, source_id)
-        source = self.session().resource('ec2').Image(source_id)
+        log.info('Publishing source: %s/%s', source_region, source.id)
 
         # we may be updating tags, get them from image config
         tags = ic.tags
@@ -308,21 +296,15 @@ class AWSCloudAdapter(CloudAdapterInterface):
                 log.warning('Skipping unsubscribed AWS region %s', r)
                 continue
 
-            images = self._get_images_with_tags(
-                region=r,
-                project=ic.project,
-                image_key=ic.image_key,
-                tags={'revision': ic.revision}
-            )
-            if images:
-                image = images[0]
+            image = self._get_this_image(ic, region=r)
+            if image:
                 log.info('%s: Already exists as %s', r, image.id)
             else:
                 ec2c = self.session(r).client('ec2')
                 copy_image_opts = {
                     'Description': source.description,
                     'Name': source.name,
-                    'SourceImageId': source_id,
+                    'SourceImageId': source.id,
                     'SourceRegion': source_region,
                     'Encrypted': True if ic.encrypted else False,
                 }
@@ -343,6 +325,7 @@ class AWSCloudAdapter(CloudAdapterInterface):
 
         artifacts = {}
         copy_wait = 180
+        over_quota = {}
         while len(artifacts) < len(publishing):
             for r, image in publishing.items():
                 if r not in artifacts:
@@ -377,12 +360,17 @@ class AWSCloudAdapter(CloudAdapterInterface):
                         if perms['groups'] or perms['users']:
                             log.info('%s: Applying launch perms to %s', r, image.id)
                             image.reset_attribute(Attribute='launchPermission')
-                            image.modify_attribute(
-                                Attribute='launchPermission',
-                                OperationType='add',
-                                UserGroups=perms['groups'],
-                                UserIds=perms['users'],
-                            )
+                            try:
+                                image.modify_attribute(
+                                    Attribute='launchPermission',
+                                    OperationType='add',
+                                    UserGroups=perms['groups'],
+                                    UserIds=perms['users'],
+                                )
+                            except Exception:
+                                log.error('%s: Unable to apply launch perms to %s', r, image.id)
+                                over_quota[r] = True
+                                # defer raising exception until later
 
                         # set up AMI deprecation
                         ec2c = image.meta.client
@@ -406,6 +394,12 @@ class AWSCloudAdapter(CloudAdapterInterface):
                 log.info('Waiting %ds for %d images to complete', copy_wait, remaining)
                 time.sleep(copy_wait)
                 copy_wait = 30
+
+        if over_quota:
+            # don't block release for other regions, but try to call this out more visibly
+            print("\n==>  ALERT -- Unable to Make AMIs Public...", file=sys.stderr)
+            for r in over_quota.keys():
+                  print(f"---->  {r}", file=sys.stderr)
 
         # update image config with published information
         ic.artifacts = artifacts

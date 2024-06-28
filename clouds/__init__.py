@@ -1,6 +1,6 @@
 # vim: ts=4 et:
 
-from . import aws, nocloud, azure, gcp, oci
+from . import aws, nocloud, azure, gcp, oci, generic
 
 ADAPTERS = {}
 
@@ -14,10 +14,11 @@ def register(*mods):
 
 register(
     aws,        # well-tested and fully supported
-    nocloud,    # beta, but supported
-    azure,      # alpha, needs testing, lacks import and publish
-    gcp,        # alpha, needs testing, lacks import and publish
-    oci,        # alpha, needs testing, lacks import and publish
+    nocloud,    # beta, supported, lacks import and publish
+    azure,      # beta, supported, lacks import and publish
+    gcp,        # beta, supported, lacks import and publish
+    oci,        # beta, supported, lacks import and publish
+    generic,    # alpha, needs testing, lacks import and publish
 )
 
 

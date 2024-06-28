@@ -38,11 +38,16 @@ case "$CLOUD" in
     oci)
         DATASOURCE="Oracle"
         ;;
+    generic)
+        # default is to autodetect
+        ;;
     *)
         echo "Unsupported Cloud '$CLOUD'" >&2
         exit 1
         ;;
 esac
 
-printf '\n\n# Cloud-Init will use default configuration for this DataSource\n'
-printf 'datasource_list: ["%s"]\n' "$DATASOURCE" >> "$TARGET"/etc/cloud/cloud.cfg
+if [ "$CLOUD" != "generic" ]; then
+    printf '\n\n# Cloud-Init will use default configuration for this DataSource\n'
+    printf 'datasource_list: ["%s"]\n' "$DATASOURCE" >> "$TARGET"/etc/cloud/cloud.cfg
+fi

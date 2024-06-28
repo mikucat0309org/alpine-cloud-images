@@ -110,9 +110,10 @@ for i_key, i_cfg in configs.get().items():
     arch = i_cfg.arch
     firmware = i_cfg.firmware
     bootstrap = i_cfg.bootstrap
+    machine = i_cfg.machine
     cloud = i_cfg.cloud
     # key on "variant" (but do not include cloud!)
-    variant = f"{release} {arch} {firmware} {bootstrap}"
+    variant = f"{release} {arch} {firmware} {bootstrap} {machine}"
 
     if cloud not in filters['clouds']:
         filters['clouds'][cloud] = {
@@ -138,6 +139,12 @@ for i_key, i_cfg in configs.get().items():
             'bootstrap_name': i_cfg.bootstrap_name,
         }
 
+    if machine not in filters['machines']:
+        filters['machines'][machine] = {
+            'machine': machine,
+            'machine_name': i_cfg.machine_name,
+        }
+
     versions[version] |= {
         'version': version,
         'release': release,
@@ -148,6 +155,7 @@ for i_key, i_cfg in configs.get().items():
         'arch': arch,
         'firmware': firmware,
         'bootstrap': bootstrap,
+        'machine': machine,
         #'released': i_cfg.released.split('T')[0],     # just the date
         'released': released
     }
@@ -184,7 +192,7 @@ log.info('Making data mustache-compatible')
 
 # convert filters to mustache-compatible format
 data['filters'] = {}
-for f in ['clouds', 'regions', 'archs', 'firmwares', 'bootstraps']:
+for f in ['clouds', 'regions', 'archs', 'firmwares', 'bootstraps', 'machines']:
     data['filters'][f] = [
         filters[f][k] for k in filters[f]   # order as they appear in work/images.yaml
     ]
