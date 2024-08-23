@@ -38,6 +38,9 @@ case "$CLOUD" in
     oci)
         DATASOURCE="Oracle"
         ;;
+    openstack)
+        DATASOURCE="Openstack"
+        ;;
     generic)
         # default is to autodetect
         ;;
