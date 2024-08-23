@@ -1,6 +1,6 @@
 # vim: ts=4 et:
 
-from . import aws, nocloud, azure, gcp, oci, generic
+from . import aws, nocloud, azure, gcp, oci, generic, openstack
 
 ADAPTERS = {}
 
@@ -19,6 +19,7 @@ register(
     gcp,        # beta, supported, lacks import and publish
     oci,        # beta, supported, lacks import and publish
     generic,    # alpha, needs testing, lacks import and publish
+    openstack,  # alpha, needs testing, lacks import and publish
 )
 
 
